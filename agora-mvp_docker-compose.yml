@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  whatsapp-gateway:
+    build: ./whatsapp-gateway
+    container_name: agora-wa-gateway
+    restart: unless-stopped
+    volumes:
+      - ./whatsapp-gateway:/app
+      - /app/node_modules # Prevent overwriting node_modules inside container
+    ports:
+      - "3000:3000"
+    depends_on:
+      - ai-engine
+
+  ai-engine:
+    build: ./ai-engine
+    container_name: agora-ai-engine
+    restart: unless-stopped
+    volumes:
+      - ./ai-engine:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./ai-engine/.env
