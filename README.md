@@ -17,5 +17,5 @@ Pastikan Anda telah menginstal:
 ### Langkah-Langkah Menjalankan Aplikasi
 1. **Clone repositori ini:**
    ```bash
-   git clone [https://github.com/](https://github.com/)[FlintsXzzz]/AGORA.git
+   git clone https://github.com/FlintsXzzz/AGORA
    cd agora
