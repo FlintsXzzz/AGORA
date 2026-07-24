@@ -1,30 +1,91 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 
-// Path untuk menyimpan sesi autentikasi agar tidak perlu scan QR berulang kali
-const SESSION_DIR = './.wwebjs_auth';
+const SESSION_DIR = process.env.WWEBJS_SESSION_DIR || path.resolve(process.cwd(), '.wwebjs_auth');
+const AI_ENGINE_BASE_URL = process.env.AI_ENGINE_BASE_URL || 'http://ai-engine:8000';
+const AI_ENGINE_URL = `${AI_ENGINE_BASE_URL}/extract-receipt`;
+const SAVE_TRANSACTION_URL = `${AI_ENGINE_BASE_URL}/transactions`;
+
+fs.mkdirSync(SESSION_DIR, { recursive: true });
+
+function normalizeReceiptItems(payload) {
+    if (Array.isArray(payload)) {
+        return payload.map((item, index) => ({
+            item: item.item || item.name || `item_${index + 1}`,
+            quantity: Number(item.quantity || item.qty || 1),
+            price: Number(item.price || item.amount || 0)
+        }));
+    }
+
+    if (payload && typeof payload === 'object' && Array.isArray(payload.items)) {
+        return payload.items.map((item, index) => ({
+            item: item.item || item.name || `item_${index + 1}`,
+            quantity: Number(item.quantity || item.qty || 1),
+            price: Number(item.price || item.amount || 0)
+        }));
+    }
+
+    return [];
+}
+
+function parseReceiptPayload(rawPayload) {
+    if (!rawPayload) {
+        return { items: [], total_amount: 0 };
+    }
+
+    if (typeof rawPayload === 'string') {
+        const cleaned = rawPayload.replace(/```json|```/g, '').trim();
+
+        try {
+            const parsed = JSON.parse(cleaned);
+            const items = normalizeReceiptItems(parsed);
+            const totalAmount = Number(parsed.total_amount || parsed.totalAmount || 0);
+
+            return {
+                items,
+                total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0), 0)
+            };
+        } catch (error) {
+            return { items: [], total_amount: 0 };
+        }
+    }
+
+    if (Array.isArray(rawPayload) || (rawPayload && typeof rawPayload === 'object')) {
+        const items = normalizeReceiptItems(rawPayload);
+        const totalAmount = Number(rawPayload.total_amount || rawPayload.totalAmount || 0);
+
+        return {
+            items,
+            total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0), 0)
+        };
+    }
+
+    return { items: [], total_amount: 0 };
+}
 
 console.log('🔄 Menginisialisasi sistem AGORA WhatsApp Gateway...');
+console.log(`📁 Menyimpan sesi WhatsApp di: ${SESSION_DIR}`);
 
 const client = new Client({
-    // LocalAuth menyimpan sesi di folder lokal, sangat penting agar bot stabil saat direstart
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: {
-        // Flag wajib jika dijalankan di dalam Docker (mencegah error sandbox)
+        headless: true,
         args: [
-            '--no-sandbox', 
+            '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process', // Berguna untuk menghemat memory
-            '--disable-gpu'
+            '--single-process',
+            '--disable-gpu',
+            '--disable-software-rasterizer'
         ],
-        headless: true
+        timeout: 60000
     }
 });
 
@@ -52,67 +113,82 @@ client.on('ready', () => {
     console.log('\n======================================================');
     console.log('🤖 AGORA BOT ONLINE & SIAP DIGUNAKAN!');
     console.log('======================================================\n');
+    console.log(`🟢 Session aktif tersimpan di: ${SESSION_DIR}`);
     console.log('Menunggu pesan masuk...');
+});
+
+client.on('disconnected', (reason) => {
+    console.warn('⚠️ Bot terputus dari WhatsApp. Alasan:', reason);
+
+    if (reason && !String(reason).toLowerCase().includes('auth')) {
+        console.log('🔄 Mencoba menghubungkan ulang bot dalam 5 detik...');
+        setTimeout(() => client.initialize(), 5000);
+    }
 });
 
 // Event: Mendengarkan pesan dari pengguna
 client.on('message', async msg => {
     const sender = msg.from;
-    
+    const body = (msg.body || '').trim();
+
     // Fitur ping untuk mengecek responsivitas bot
-    if (msg.body === '!ping') {
+    if (body === '!ping') {
         console.log(`[${new Date().toLocaleTimeString()}] Menerima perintah !ping dari ${sender}`);
         msg.reply('pong! 🏓 Sistem AGORA berjalan dengan baik. Silakan kirimkan foto struk Anda.');
+        return;
     }
-    
+
     // Fitur: Menangani pesan berupa media (gambar struk)
     if (msg.hasMedia) {
         console.log(`\n[${new Date().toLocaleTimeString()}] Menerima pesan berisi media dari ${sender}`);
-        
+
         try {
-            // 1. Mengunduh media dari WhatsApp
             const media = await msg.downloadMedia();
-            
-            // Memastikan media yang dikirim adalah gambar
-            if (media && media.mimetype.includes('image')) {
-                msg.reply('⏳ Menerima gambar struk. Sedang mengekstrak data...');
-                
-                // 2. Mengubah base64 dari whatsapp-web.js menjadi buffer memori
-                const buffer = Buffer.from(media.data, 'base64');
-                
-                // 3. Menyiapkan FormData untuk dikirim via HTTP POST (Multipart)
-                const form = new FormData();
-                form.append('file', buffer, {
-                    filename: `receipt_${Date.now()}.jpg`,
-                    contentType: media.mimetype
-                });
-                
-                // 4. Meneruskan gambar ke AI Engine (FastAPI)
-                // Catatan: Karena kita menggunakan docker-compose, kita panggil hostname 'ai-engine'
-                console.log('➡️ Mengirim gambar ke AI Engine untuk diproses...');
-                const aiResponse = await axios.post('http://ai-engine:8000/extract-receipt', form, {
-                    headers: {
-                        ...form.getHeaders()
-                    }
-                });
-                
-                // 5. Memberikan respons balik ke pengguna
-                console.log('✅ AI Engine merespons:', aiResponse.data);
-                msg.reply(`✅ Berhasil diproses AI Engine.\nFile terdeteksi: ${aiResponse.data.filename}\nStatus: ${aiResponse.data.status}`);
-                
-            } else {
+
+            if (!media || !media.mimetype || !media.mimetype.startsWith('image/')) {
                 msg.reply('⚠️ Format tidak didukung. Harap kirimkan file berupa gambar/foto struk.');
+                return;
             }
+
+            msg.reply('⏳ Menerima gambar struk. Sedang mengekstrak data...');
+
+            const buffer = Buffer.from(media.data, 'base64');
+            const form = new FormData();
+            form.append('file', buffer, {
+                filename: `receipt_${Date.now()}.jpg`,
+                contentType: media.mimetype
+            });
+
+            console.log('➡️ Mengirim gambar ke AI Engine untuk diproses...');
+            const aiResponse = await axios.post(AI_ENGINE_URL, form, {
+                headers: {
+                    ...form.getHeaders()
+                },
+                timeout: 120000
+            });
+
+            console.log('✅ AI Engine merespons:', aiResponse.data);
+
+            const parsedReceipt = parseReceiptPayload(aiResponse.data.data);
+            const saveTransactionPayload = {
+                source: 'whatsapp',
+                receipt_filename: aiResponse.data.filename,
+                items: parsedReceipt.items,
+                total_amount: parsedReceipt.total_amount,
+                notes: `Receipt processed from WhatsApp at ${new Date().toISOString()}`
+            };
+
+            const saveResponse = await axios.post(SAVE_TRANSACTION_URL, saveTransactionPayload, {
+                timeout: 120000
+            });
+
+            console.log('✅ Transaksi berhasil disimpan:', saveResponse.data);
+            msg.reply(`✅ Berhasil diproses AI Engine.\nFile terdeteksi: ${aiResponse.data.filename}\nStatus: ${aiResponse.data.status}\nTransaksi tersimpan dengan ID: ${saveResponse.data.transaction.transaction_id}`);
         } catch (error) {
             console.error('❌ Error saat memproses media:', error.message);
-            msg.reply('❌ Terjadi kesalahan saat mengunduh atau meneruskan gambar.');
+            msg.reply('❌ Terjadi kesalahan saat mengunduh, meneruskan gambar, atau menyimpan transaksi.');
         }
     }
-});
-
-// Event: Disconnected (Penting untuk debugging jika bot tiba-tiba mati)
-client.on('disconnected', (reason) => {
-    console.log('❌ Bot terputus dari WhatsApp. Alasan:', reason);
 });
 
 // Memulai proses inisialisasi
