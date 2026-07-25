@@ -1,5 +1,11 @@
 name: CI
 
+permissions:
+  contents: read
+
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
