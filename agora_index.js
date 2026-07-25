@@ -70,23 +70,50 @@ function parseReceiptPayload(rawPayload) {
 console.log('🔄 Menginisialisasi sistem AGORA WhatsApp Gateway...');
 console.log(`📁 Menyimpan sesi WhatsApp di: ${SESSION_DIR}`);
 
+// Puppeteer/Chromium executable detection for Windows hosts (use system Chrome/Edge if available)
+const possibleChromePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+];
+let chromeExecutable = null;
+for (const p of possibleChromePaths) {
+    if (fs.existsSync(p)) {
+        chromeExecutable = p;
+        break;
+    }
+}
+
+const puppeteerOptions = {
+    // Use headful mode when attaching to system Chrome on Windows to avoid early-frame issues
+    headless: false,
+    args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--disable-software-rasterizer'
+    ],
+    timeout: 60000
+};
+
+if (chromeExecutable) {
+    console.log('ℹ️ Using system browser at', chromeExecutable);
+    puppeteerOptions.executablePath = chromeExecutable;
+} else if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    console.log('ℹ️ Using PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+    puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+} else {
+    console.warn('⚠️ No system browser detected. To run the WhatsApp gateway on Windows either install Chrome/Edge, set PUPPETEER_EXECUTABLE_PATH, or install the "puppeteer" package to provide a Chromium binary.');
+}
+
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu',
-            '--disable-software-rasterizer'
-        ],
-        timeout: 60000
-    }
+    puppeteer: puppeteerOptions
 });
 
 // Event: Emit QR Code ke terminal (hanya jika belum ada sesi tersimpan)
