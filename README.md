@@ -19,3 +19,9 @@ Pastikan Anda telah menginstal:
    ```bash
    git clone https://github.com/FlintsXzzz/AGORA
    cd agora
+
+   # Create a local .env file with the NVIDIA API key
+   # NVIDIA_API_KEY=your_nvidia_api_key_here
+
+   # Start with Docker Compose (recommended):
+   docker compose up --build

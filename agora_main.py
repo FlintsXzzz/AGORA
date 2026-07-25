@@ -445,3 +445,4 @@ async def extract_receipt(file: UploadFile = File(...)):
     except Exception as e:
         print(f"Exception di AI Engine: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Terjadi kesalahan internal server: {str(e)}")
+
