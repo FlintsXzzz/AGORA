@@ -15,7 +15,8 @@ load_dotenv()
 
 app = FastAPI(title="AGORA AI Engine")
 
-NVIDIA_API_KEY = os.getenv("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")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Endpoint standar NVIDIA NIM untuk model vision/multimodal
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 STORAGE_DIR = Path(os.getenv("AGORA_STORAGE_DIR", Path.cwd()))
