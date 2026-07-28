@@ -1,10 +1,42 @@
+x-node-base: &node-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /app
+  volumes:
+    - .:/app
+  environment:
+    NODE_ENV: production
+
 services:
   agora:
-    image: agora
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-    environment:
-      NODE_ENV: production
+    <<: *node-base
+    command: ["node", "index.js"]
     ports:
-      - 3000:3000
+      - "3000:3000"
+    restart: unless-stopped
+
+  ai-engine:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    command: >
+      sh -c "pip install --no-cache-dir -r agora_requirements.txt &&
+             uvicorn agora_main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  agora-debug:
+    <<: *node-base
+    environment:
+      NODE_ENV: development
+      DEBUG: "true"
+    command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    restart: unless-stopped

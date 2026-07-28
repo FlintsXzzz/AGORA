@@ -2,20 +2,37 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+This project is currently in active development. Security updates are provided for:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version/Branch | Supported |
+| --- | --- |
+| Latest release on the main branch | :white_check_mark: |
+| Older tagged releases | :x: |
+| Unreleased or local development builds | :x: |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please report security vulnerabilities privately through GitHub Security Advisories rather than opening a public issue.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+When reporting, include:
+- A clear description of the vulnerability
+- Steps to reproduce it
+- Potential impact and affected components
+- Any suggested mitigation
+
+Please do not share sensitive information publicly. Avoid posting credentials, tokens, or private data in issues or pull requests.
+
+### What to expect
+- We aim to acknowledge reports within 5 business days.
+- We will assess the issue, reproduce it when possible, and determine the appropriate remediation.
+- If the report is accepted, we will work on a fix and release it as soon as possible.
+- If the report is declined, we will explain the reasoning clearly.
+
+## Security Areas of Interest
+
+Please pay special attention to:
+- Docker and container configuration
+- Secret handling and environment variables
+- File upload and OCR processing workflows
+- Authentication and access control for any exposed services
+- Dependency vulnerabilities in Node.js, Python, and container images

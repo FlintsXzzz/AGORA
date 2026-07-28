@@ -1,4 +1,13 @@
 {
+  "name": "agora",
+  "version": "1.0.0",
+  "description": "AGORA WhatsApp gateway and AI workflow",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
   "dependencies": {
     "apt-get": "^0.1.0",
     "axios": "^1.18.1",

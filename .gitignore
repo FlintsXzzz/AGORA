@@ -1,1 +1,26 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+
+# Local runtime and auth artifacts
+.wwebjs_auth/
+.wwebjs_cache/
+.aitk/
+.cagent/
+.config/
+.gitconfig
+.vscode/
+
+# Python caches and local output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+storage/
+
+# Large or local-only data
+nemotron-ocr-v2/
+*.log
+.DS_Store
