@@ -70,23 +70,50 @@ function parseReceiptPayload(rawPayload) {
 console.log('🔄 Menginisialisasi sistem AGORA WhatsApp Gateway...');
 console.log(`📁 Menyimpan sesi WhatsApp di: ${SESSION_DIR}`);
 
+// Puppeteer/Chromium executable detection for Windows hosts (use system Chrome/Edge if available)
+const possibleChromePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+];
+let chromeExecutable = null;
+for (const p of possibleChromePaths) {
+    if (fs.existsSync(p)) {
+        chromeExecutable = p;
+        break;
+    }
+}
+
+const puppeteerOptions = {
+    // Use headful mode when attaching to system Chrome on Windows to avoid early-frame issues
+    headless: false,
+    args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--disable-software-rasterizer'
+    ],
+    timeout: 60000
+};
+
+if (chromeExecutable) {
+    console.log('ℹ️ Using system browser at', chromeExecutable);
+    puppeteerOptions.executablePath = chromeExecutable;
+} else if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    console.log('ℹ️ Using PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+    puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+} else {
+    console.warn('⚠️ No system browser detected. To run the WhatsApp gateway on Windows either install Chrome/Edge, set PUPPETEER_EXECUTABLE_PATH, or install the "puppeteer" package to provide a Chromium binary.');
+}
+
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu',
-            '--disable-software-rasterizer'
-        ],
-        timeout: 60000
-    }
+    puppeteer: puppeteerOptions
 });
 
 client.on('qr', (qr) => {
@@ -135,6 +162,25 @@ client.on('message', async msg => {
     if (msg.hasMedia) {
         console.log(`\n[${new Date().toLocaleTimeString()}] Menerima pesan berisi media dari ${sender}`);
 
+        // Helper: kirim buffer ke AI Engine sebagai multipart/form-data
+        async function sendBufferToAI(buffer, mimetype, filename) {
+            const form = new FormData();
+            form.append('file', buffer, { filename, contentType: mimetype });
+
+            const resp = await axios.post(AI_ENGINE_URL, form, {
+                headers: { ...form.getHeaders() },
+                timeout: 120000
+            });
+
+            return resp.data;
+        }
+
+        // Helper: simpan transaksi ke service penyimpanan
+        async function saveTransactionToStore(payload) {
+            const resp = await axios.post(SAVE_TRANSACTION_URL, payload, { timeout: 120000 });
+            return resp.data;
+        }
+
         try {
             const media = await msg.downloadMedia();
 
@@ -146,40 +192,44 @@ client.on('message', async msg => {
             msg.reply('⏳ Menerima gambar struk. Sedang mengekstrak data...');
 
             const buffer = Buffer.from(media.data, 'base64');
-            const form = new FormData();
-            form.append('file', buffer, {
-                filename: `receipt_${Date.now()}.jpg`,
-                contentType: media.mimetype
-            });
+            const filename = `receipt_${Date.now()}.jpg`;
 
             console.log('➡️ Mengirim gambar ke AI Engine untuk diproses...');
-            const aiResponse = await axios.post(AI_ENGINE_URL, form, {
-                headers: {
-                    ...form.getHeaders()
-                },
-                timeout: 120000
-            });
+            const aiData = await sendBufferToAI(buffer, media.mimetype, filename);
 
-            console.log('✅ AI Engine merespons:', aiResponse.data);
+            console.log('✅ AI Engine merespons:', aiData);
 
-            const parsedReceipt = parseReceiptPayload(aiResponse.data.data);
+            const parsedReceipt = parseReceiptPayload(aiData.data);
             const saveTransactionPayload = {
                 source: 'whatsapp',
-                receipt_filename: aiResponse.data.filename,
+                receipt_filename: aiData.filename || filename,
                 items: parsedReceipt.items,
                 total_amount: parsedReceipt.total_amount,
                 notes: `Receipt processed from WhatsApp at ${new Date().toISOString()}`
             };
 
-            const saveResponse = await axios.post(SAVE_TRANSACTION_URL, saveTransactionPayload, {
-                timeout: 120000
-            });
+            const saveResp = await saveTransactionToStore(saveTransactionPayload);
 
-            console.log('✅ Transaksi berhasil disimpan:', saveResponse.data);
-            msg.reply(`✅ Berhasil diproses AI Engine.\nFile terdeteksi: ${aiResponse.data.filename}\nStatus: ${aiResponse.data.status}\nTransaksi tersimpan dengan ID: ${saveResponse.data.transaction.transaction_id}`);
+            console.log('✅ Transaksi berhasil disimpan:', saveResp);
+            const transactionId = saveResp?.transaction?.transaction_id || saveResp?.transaction_id || 'unknown';
+
+            msg.reply(`✅ Berhasil diproses AI Engine.\nFile terdeteksi: ${aiData.filename || filename}\nStatus: ${aiData.status || 'ok'}\nTransaksi tersimpan dengan ID: ${transactionId}`);
         } catch (error) {
-            console.error('❌ Error saat memproses media:', error.message);
-            msg.reply('❌ Terjadi kesalahan saat mengunduh, meneruskan gambar, atau menyimpan transaksi.');
+            console.error('❌ Error saat memproses media:', error && error.stack ? error.stack : error);
+
+            // Jika error berkaitan dengan autentikasi wwebjs, coba inisialisasi ulang sekali
+            const errMsg = (error && error.message) ? error.message.toLowerCase() : '';
+            if (errMsg.includes('auth') || errMsg.includes('session')) {
+                msg.reply('⚠️ Terjadi masalah autentikasi sesi. Mencoba memulai ulang sesi...');
+                try {
+                    client.destroy();
+                } catch (e) {
+                    // ignore
+                }
+                setTimeout(() => client.initialize(), 2000);
+            } else {
+                msg.reply('❌ Terjadi kesalahan saat mengunduh, meneruskan gambar, atau menyimpan transaksi. Silakan coba lagi.');
+            }
         }
     }
 });

@@ -16,6 +16,7 @@ load_dotenv()
 app = FastAPI(title="AGORA AI Engine")
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Endpoint standar NVIDIA NIM untuk model vision/multimodal
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 STORAGE_DIR = Path(os.getenv("AGORA_STORAGE_DIR", Path.cwd()))
@@ -445,3 +446,4 @@ async def extract_receipt(file: UploadFile = File(...)):
     except Exception as e:
         print(f"Exception di AI Engine: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Terjadi kesalahan internal server: {str(e)}")
+
