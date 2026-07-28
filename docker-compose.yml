@@ -9,7 +9,7 @@ services:
       - /usr/src/app/node_modules
     ports:
       - "3000:3000"
-    command: node agora_index.js
+    command: node index.js
     environment:
       - AI_ENGINE_BASE_URL=http://ai-engine:8000
       - WWEBJS_SESSION_DIR=/usr/src/app/.wwebjs_auth
@@ -21,7 +21,7 @@ services:
       - ./:/usr/src/app
     ports:
       - "8000:8000"
-    command: bash -c "pip install -r requirements.txt >/dev/null 2>&1 || true && uvicorn agora_main:app --host 0.0.0.0 --port 8000 --reload"
+    command: bash -c "pip install -r agora_requirements.txt >/dev/null 2>&1 || true && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - AGORA_STORAGE_DIR=/usr/src/app/storage

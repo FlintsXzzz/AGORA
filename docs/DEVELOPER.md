@@ -2,22 +2,22 @@ Developer Notes — AGORA
 
 Overview
 - Entry points:
-  - Node WhatsApp gateway: agora_index.js
-  - Python AI Engine (FastAPI): agora_main.py
+  - Node WhatsApp gateway: index.js
+  - Python AI Engine (FastAPI): main.py
 
 Run with Docker (recommended):
 - Requires Docker and Docker Compose
 - From repo root:
-  docker compose -f agora_docker-compose.yml up --build
+  docker compose up --build
 
 Run locally (without Docker):
 - Python AI Engine:
-  python -m uvicorn agora_main:app --reload --port 8000
+  python -m uvicorn main:app --reload --port 8000
   Required env: NVIDIA_API_KEY, AGORA_STORAGE_DIR (optional)
 
 - Node WhatsApp Gateway:
   NODE: ensure Node 18+ and native dependencies for puppeteer are available.
-  node agora_index.js
+  node index.js
   Env: AI_ENGINE_BASE_URL (default http://ai-engine:8000), WWEBJS_SESSION_DIR (optional)
 
 Tests

@@ -40,16 +40,55 @@ def normalize_ocr_payload(extracted_text: str) -> dict:
 
 
 def normalize_numeric_token(token: str) -> float | None:
-    cleaned = token.strip().replace("Rp", "").replace("IDR", "")
-    cleaned = cleaned.replace(".", "").replace(",", ".")
-
-    if not re.search(r"\d", cleaned):
+    if token is None:
         return None
+
+    normalized = str(token).strip()
+    if not normalized:
+        return None
+
+    normalized = re.sub(r"[^0-9,\.\-]", "", normalized)
+    if not re.search(r"\d", normalized):
+        return None
+
+    normalized = normalized.replace(" ", "")
+    comma_count = normalized.count(",")
+    dot_count = normalized.count(".")
+
+    if comma_count > 0 and dot_count > 0:
+        if normalized.rfind(",") > normalized.rfind("."):
+            normalized = normalized.replace(".", "")
+            normalized = normalized.replace(",", ".")
+        else:
+            normalized = normalized.replace(",", "")
+    elif comma_count > 0:
+        parts = normalized.split(",")
+        if comma_count > 1 or len(parts[-1]) == 3:
+            normalized = normalized.replace(",", "")
+        else:
+            normalized = normalized.replace(",", ".")
+    elif dot_count > 1:
+        normalized = normalized.replace(".", "")
+    elif dot_count == 1:
+        parts = normalized.split(".")
+        if len(parts[-1]) == 3:
+            normalized = normalized.replace(".", "")
 
     try:
-        return float(cleaned)
+        return float(normalized)
     except ValueError:
         return None
+
+
+def normalize_integer_token(token: str) -> int | None:
+    value = normalize_numeric_token(token)
+    if value is None:
+        return None
+
+    if not float(value).is_integer():
+        return None
+
+    return int(value)
 
 
 def fallback_parse_items(payload: dict) -> list[dict]:
@@ -116,8 +155,11 @@ def fallback_parse_items(payload: dict) -> list[dict]:
             name = match.group("name").strip(" -:|")
             qty = match.groupdict().get("qty")
             price = match.groupdict().get("price")
-            quantity = int(qty) if qty else 1
+            quantity = normalize_integer_token(qty) if qty else 1
             normalized_price = normalize_numeric_token(price or "0")
+
+            if not quantity or quantity < 1:
+                continue
 
             if name and normalized_price is not None and normalized_price >= 0:
                 fallback_items.append({
@@ -143,16 +185,16 @@ def fallback_parse_items(payload: dict) -> list[dict]:
             name = " ".join(name_tokens).strip(" -:|")
 
             if first_num <= 10 and second_num > 10:
-                quantity = int(first_num)
+                quantity = int(first_num) if first_num >= 1 else 1
                 price = second_num
             elif second_num <= 10 and first_num > 10:
-                quantity = int(second_num)
+                quantity = int(second_num) if second_num >= 1 else 1
                 price = first_num
             else:
                 quantity = 1
                 price = second_num
 
-            if name and price > 0:
+            if name and price >= 0 and quantity >= 1:
                 fallback_items.append({
                     "item": name,
                     "quantity": quantity,
@@ -163,7 +205,7 @@ def fallback_parse_items(payload: dict) -> list[dict]:
             price = numeric_tokens[0]
             name_tokens = [part for index, part in enumerate(parts) if index not in numeric_indexes]
             name = " ".join(name_tokens).strip(" -:|")
-            if name and price > 0:
+            if name and price >= 0:
                 fallback_items.append({
                     "item": name,
                     "quantity": 1,
@@ -198,21 +240,23 @@ def validate_ocr_output(payload: dict) -> dict:
             raise HTTPException(status_code=400, detail=f"Item ke-{index} tidak valid.")
 
         item_name = str(item.get("item") or item.get("name") or "").strip()
-        quantity = item.get("quantity") if item.get("quantity") is not None else item.get("qty")
-        price = item.get("price") if item.get("price") is not None else item.get("amount")
+        quantity_value = item.get("quantity") if item.get("quantity") is not None else item.get("qty")
+        price_value = item.get("price") if item.get("price") is not None else item.get("amount")
 
         if not item_name:
             item_name = f"item_{index}"
-        if quantity is None:
-            quantity = 1
-        if price is None:
-            price = 0
-
-        try:
-            quantity_int = int(quantity)
-            price_float = float(price)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"Format quantity atau price pada item '{item_name}' tidak valid.")
+        if quantity_value is None:
+            quantity_int = 1
+        else:
+            quantity_int = normalize_integer_token(quantity_value)
+            if quantity_int is None:
+                raise HTTPException(status_code=400, detail=f"Format quantity item '{item_name}' tidak valid.")
+        if price_value is None:
+            price_float = 0.0
+        else:
+            price_float = normalize_numeric_token(price_value)
+            if price_float is None:
+                raise HTTPException(status_code=400, detail=f"Format price item '{item_name}' tidak valid.")
 
         if quantity_int < 1:
             raise HTTPException(status_code=400, detail=f"Quantity item '{item_name}' harus lebih dari 0.")
@@ -229,9 +273,8 @@ def validate_ocr_output(payload: dict) -> dict:
     if total_amount is None:
         total_amount = sum(item["price"] * item["quantity"] for item in normalized_items)
     else:
-        try:
-            total_amount = float(total_amount)
-        except (TypeError, ValueError):
+        total_amount = normalize_numeric_token(total_amount)
+        if total_amount is None:
             raise HTTPException(status_code=400, detail="total_amount harus berupa angka.")
 
     if total_amount < 0:
@@ -311,11 +354,29 @@ def normalize_items_from_receipt_data(receipt_data: dict | None) -> list[Transac
         if not isinstance(item, dict):
             continue
 
+        item_name = item.get("item") or item.get("name") or "Unknown Item"
+        quantity_value = item.get("quantity") if item.get("quantity") is not None else item.get("qty")
+        price_value = item.get("price") if item.get("price") is not None else item.get("amount")
+
+        if quantity_value is None:
+            quantity = 1
+        else:
+            quantity = normalize_integer_token(quantity_value)
+            if quantity is None or quantity < 1:
+                continue
+
+        if price_value is None:
+            price = 0.0
+        else:
+            price = normalize_numeric_token(price_value)
+            if price is None or price < 0:
+                continue
+
         normalized_items.append(
             TransactionItem(
-                item=item.get("item") or item.get("name") or "Unknown Item",
-                quantity=int(item.get("quantity") or item.get("qty") or 1),
-                price=float(item.get("price") or item.get("amount") or 0),
+                item=str(item_name),
+                quantity=quantity,
+                price=price,
             )
         )
 

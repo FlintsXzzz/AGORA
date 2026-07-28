@@ -63,6 +63,8 @@ NVIDIA_API_KEY=your_api_key_here
 AGORA_STORAGE_DIR=./storage
 ```
 
+> Jangan commit file `.env` ke repositori. File ini harus tetap lokal karena berisi kredensial sensitif.
+
 ### 5. Jalankan layanan
 
 Buka dua terminal terpisah.
@@ -76,7 +78,7 @@ node index.js
 Terminal 2 untuk AI Engine:
 
 ```bash
-uvicorn agora_main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 Setelah gateway berjalan, scan QR code yang muncul di terminal untuk menghubungkan akun WhatsApp Anda.
@@ -99,7 +101,7 @@ docker compose up --build
 ## 📁 Struktur Proyek
 
 - `index.js` — gateway WhatsApp
-- `agora_main.py` — API AI Engine
+- `main.py` — API AI Engine
 - `Dockerfile` — image container untuk aplikasi Node.js
 - `docker-compose.yml` — konfigurasi layanan Docker
 - `agora_requirements.txt` — dependency Python
@@ -114,10 +116,7 @@ docker compose up --build
 ## 🤝 Kontribusi
 
 Kontribusi sangat terbuka. Silakan buat branch baru, lakukan perubahan, lalu ajukan pull request.
-=======
-### Langkah-Langkah Menjalankan Aplikasi
-1. **Clone repositori ini:**
-   ```bash
+
    git clone https://github.com/FlintsXzzz/AGORA
    cd agora
 

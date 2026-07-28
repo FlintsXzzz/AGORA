@@ -25,7 +25,7 @@ services:
       - ./.env
     command: >
       sh -c "pip install --no-cache-dir -r agora_requirements.txt &&
-             uvicorn agora_main:app --host 0.0.0.0 --port 8000"
+             uvicorn main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     restart: unless-stopped

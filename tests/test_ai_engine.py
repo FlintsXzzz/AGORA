@@ -1,4 +1,4 @@
-from agora_main import normalize_numeric_token, fallback_parse_items
+from main import normalize_numeric_token, fallback_parse_items
 
 
 def test_normalize_numeric_token_simple():
@@ -17,3 +17,19 @@ def test_fallback_parse_items_basic():
 # Basic smoke test for empty payload
 def test_fallback_parse_items_empty():
     assert fallback_parse_items({}) == []
+
+
+def test_normalize_numeric_token_currency_and_grouping():
+    assert normalize_numeric_token("Rp 1.234.567") == 1234567.0
+    assert normalize_numeric_token("1,234") == 1234.0
+    assert normalize_numeric_token("1.234,56") == 1234.56
+    assert normalize_numeric_token("1000") == 1000.0
+
+
+def test_fallback_parse_items_single_numeric_token():
+    payload = {"raw_text": "Es Teh 12000"}
+    items = fallback_parse_items(payload)
+    assert len(items) == 1
+    assert items[0]["item"].lower() == "es teh"
+    assert items[0]["quantity"] == 1
+    assert items[0]["price"] == 12000.0
