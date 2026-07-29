@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web-js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
@@ -86,7 +86,7 @@ for (const p of possibleChromePaths) {
 
 const puppeteerOptions = {
     // Use headful mode when attaching to system Chrome on Windows to avoid early-frame issues
-    headless: false,
+    headless: chromeExecutable ? false : true,
     args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -167,6 +167,23 @@ client.on('message', async msg => {
     if (msg.hasMedia) {
         console.log(`\n[${new Date().toLocaleTimeString()}] Menerima pesan berisi media dari ${sender}`);
 
+        const phoneNumber = sender.replace('@c.us', '');
+        let userData = null;
+        try {
+            const userResp = await axios.get(`${AI_ENGINE_BASE_URL}/users/by-whatsapp/${phoneNumber}`);
+            userData = userResp.data;
+        } catch (err) {
+            if (err.response && err.response.status === 404) {
+                msg.reply('⚠️ Nomor Anda belum terdaftar dalam sistem. Silakan hubungi admin untuk mendaftar.');
+                return;
+            }
+            console.error('Error checking user:', err.message);
+            msg.reply('❌ Terjadi kesalahan saat memverifikasi nomor Anda.');
+            return;
+        }
+
+        console.log(`✅ User diverifikasi: Tenant ID ${userData.tenant_id}, Role ${userData.role}`);
+
         // Helper: kirim buffer ke AI Engine sebagai multipart/form-data
         async function sendBufferToAI(buffer, mimetype, filename) {
             const form = new FormData();
@@ -206,10 +223,13 @@ client.on('message', async msg => {
 
             const parsedReceipt = parseReceiptPayload(aiData.data);
             const saveTransactionPayload = {
+                tenant_id: userData.tenant_id,
+                user_id: userData.user_id,
                 source: 'whatsapp',
                 receipt_filename: aiData.filename || filename,
                 items: parsedReceipt.items,
                 total_amount: parsedReceipt.total_amount,
+                receipt_data: aiData.data,
                 notes: `Receipt processed from WhatsApp at ${new Date().toISOString()}`
             };
 

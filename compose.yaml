@@ -24,10 +24,25 @@ services:
       - ./.env
     environment:
       AGORA_STORAGE_DIR: /app/storage
+      DATABASE_URL: postgresql://postgres:agora@postgres:5432/agora
     ports:
       - "8000:8000"
     volumes:
       - agora-storage:/app/storage
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: agora
+      POSTGRES_DB: agora
+    ports:
+      - "5432:5432"
+    volumes:
+      - agora-postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
 
   agora-debug:
@@ -52,3 +67,4 @@ services:
 
 volumes:
   agora-storage:
+  agora-postgres-data:

@@ -20,5 +20,7 @@
 **/obj
 **/secrets.dev.yaml
 **/values.dev.yaml
+**/.pytest_cache
+**/__pycache__
 LICENSE
 README.md

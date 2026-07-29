@@ -7,6 +7,7 @@ COPY ["package.json", "package-lock.json*", "npm-shrinkwrap.json*", "./"]
 RUN npm install
 
 RUN apt-get update && apt-get install -y \
+    chromium \
     libnspr4 \
     libnss3 \
     libgconf-2-4 \
@@ -19,11 +20,15 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 COPY . .
 
 ENV PORT=3000
 
 EXPOSE 3000
+
+RUN mkdir -p /app/.wwebjs_auth && chown -R node:node /app
 
 USER node
 

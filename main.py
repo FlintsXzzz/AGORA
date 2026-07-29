@@ -1,5 +1,8 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from database import engine, get_db
+import models
 import os
 import base64
 import requests
@@ -10,31 +13,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 import threading
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 # Memuat variabel environment
 load_dotenv()
 
-app = FastAPI(title="AGORA AI Engine")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    models.Base.metadata.create_all(bind=engine)
+    yield
+
+app = FastAPI(title="AGORA AI Engine", lifespan=lifespan)
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 if not NVIDIA_API_KEY:
     raise RuntimeError("NVIDIA_API_KEY belum dikonfigurasi di environment atau .env")
 
-
 # Endpoint standar NVIDIA NIM untuk model vision/multimodal
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-STORAGE_DIR = Path(os.getenv("AGORA_STORAGE_DIR", Path.cwd()))
-TRANSACTIONS_FILE = STORAGE_DIR / "transactions.json"
-
-# Lock untuk sinkronisasi operasi baca-tulis file JSON agar tidak race condition
-transaction_lock = threading.Lock()
-
 
 def normalize_ocr_payload(extracted_text: str) -> dict:
     cleaned_text = re.sub(r'```(?:json)?\n?|```', '', extracted_text).strip()
     try:
         parsed = json.loads(cleaned_text)
         if isinstance(parsed, dict):
+
             return parsed
     except Exception:
         pass
@@ -240,7 +243,7 @@ def validate_ocr_output(payload: dict) -> dict:
         items = fallback_parse_items(payload)
 
     if not isinstance(items, list) or len(items) == 0:
-        raise HTTPException(status_code=400, detail="OCR output harus berisi minimal 1 item transaksi.")
+        raise HTTPException(status_code=400, detail="Struk tidak terbaca jelas atau terpotong. Mohon kirimkan foto ulang yang lebih terang dan fokus.")
 
     normalized_items = []
     for index, item in enumerate(items, start=1):
@@ -303,52 +306,22 @@ class TransactionItem(BaseModel):
 
 
 class SaveTransactionRequest(BaseModel):
+    tenant_id: str
+    user_id: str
     source: str = Field(default="whatsapp")
     receipt_filename: str | None = None
     items: list[TransactionItem] | None = None
     total_amount: float | None = Field(default=None, ge=0)
     notes: str | None = None
     merchant_name: str | None = None
+    category: str | None = None
     transaction_date: str | None = None
     payment_method: str | None = None
     currency: str | None = "IDR"
     receipt_data: dict | None = None
 
 
-class TransactionRecord(BaseModel):
-    transaction_id: str
-    source: str
-    receipt_filename: str | None = None
-    items: list[TransactionItem]
-    total_amount: float | None = None
-    notes: str | None = None
-    merchant_name: str | None = None
-    transaction_date: str | None = None
-    payment_method: str | None = None
-    currency: str | None = "IDR"
-    saved_at: str
 
-
-def ensure_storage_file() -> None:
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    if not TRANSACTIONS_FILE.exists():
-        TRANSACTIONS_FILE.write_text("[]", encoding="utf-8")
-
-
-def load_transactions() -> list[dict]:
-    ensure_storage_file()
-    try:
-        with TRANSACTIONS_FILE.open("r", encoding="utf-8") as file:
-            data = json.load(file)
-        return data if isinstance(data, list) else []
-    except json.JSONDecodeError:
-        return []
-
-
-def save_transactions(transactions: list[dict]) -> None:
-    ensure_storage_file()
-    with TRANSACTIONS_FILE.open("w", encoding="utf-8") as file:
-        json.dump(transactions, file, indent=2, ensure_ascii=False)
 
 
 def normalize_items_from_receipt_data(receipt_data: dict | None) -> list[TransactionItem]:
@@ -396,14 +369,41 @@ def read_root():
     return {"message": "AGORA AI Engine is running securely."}
 
 
-@app.get("/transactions")
-def get_transactions():
-    return {"status": "success", "transactions": load_transactions()}
+@app.get("/users/by-whatsapp/{number}")
+def get_user_by_whatsapp(number: str, db: Session = Depends(get_db)):
+    cleaned = re.sub(r"[^\d]", "", number)
+    user = db.query(models.User).filter(models.User.whatsapp_number == cleaned).first()
+    
+    if not user:
+        if cleaned.startswith("62"):
+            alt_number = "0" + cleaned[2:]
+            user = db.query(models.User).filter(models.User.whatsapp_number == alt_number).first()
+        elif cleaned.startswith("0"):
+            alt_number = "62" + cleaned[1:]
+            user = db.query(models.User).filter(models.User.whatsapp_number == alt_number).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak terdaftar dalam sistem.")
+    
+    return {
+        "status": "success",
+        "user_id": str(user.id),
+        "tenant_id": str(user.tenant_id),
+        "role": user.role
+    }
 
 
 @app.post("/transactions")
-def save_transaction(payload: SaveTransactionRequest):
+def save_transaction(payload: SaveTransactionRequest, db: Session = Depends(get_db)):
     try:
+        tenant = db.query(models.Tenant).filter(models.Tenant.id == payload.tenant_id).first()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+        
+        user = db.query(models.User).filter(models.User.id == payload.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+
         receipt_data = payload.receipt_data or {}
         normalized_items = payload.items or normalize_items_from_receipt_data(receipt_data)
 
@@ -414,32 +414,38 @@ def save_transaction(payload: SaveTransactionRequest):
         if total_amount is None:
             total_amount = float(sum(item.price * item.quantity for item in normalized_items))
 
-        transaction_id = str(uuid.uuid4())
-        saved_at = datetime.now(timezone.utc).isoformat()
+        desc_parts = [f"{item.quantity}x {item.item} @ {item.price}" for item in normalized_items]
+        description = "\n".join(desc_parts)
+        if payload.notes:
+            description += f"\nNotes: {payload.notes}"
+        merchant_name = payload.merchant_name or receipt_data.get("merchant_name")
+        if merchant_name:
+            description = f"Merchant: {merchant_name}\n" + description
 
-        transaction = TransactionRecord(
-            transaction_id=transaction_id,
-            source=payload.source,
-            receipt_filename=payload.receipt_filename,
-            items=normalized_items,
-            total_amount=total_amount,
-            notes=payload.notes,
-            merchant_name=payload.merchant_name or receipt_data.get("merchant_name"),
-            transaction_date=payload.transaction_date or receipt_data.get("transaction_date"),
-            payment_method=payload.payment_method or receipt_data.get("payment_method"),
-            currency=payload.currency or receipt_data.get("currency") or "IDR",
-            saved_at=saved_at,
+        new_transaction = models.Transaction(
+            tenant_id=tenant.id,
+            recorded_by=user.id,
+            type=models.TransactionTypeEnum.EXPENSE,
+            amount=total_amount,
+            category=payload.category or receipt_data.get("category") or "Uncategorized",
+            description=description,
+            raw_image_url=payload.receipt_filename
         )
 
-        with transaction_lock:
-            transactions = load_transactions()
-            transactions.append(transaction.model_dump())
-            save_transactions(transactions)
+        db.add(new_transaction)
+        db.commit()
+        db.refresh(new_transaction)
 
         return {
             "status": "success",
             "message": "Transaction berhasil disimpan.",
-            "transaction": transaction.model_dump(),
+            "transaction": {
+                "transaction_id": str(new_transaction.id),
+                "tenant_id": str(new_transaction.tenant_id),
+                "recorded_by": str(new_transaction.recorded_by),
+                "amount": float(new_transaction),
+                "created_at": new_transaction.created_at.isoformat()
+            }
         }
     except HTTPException:
         raise
@@ -473,7 +479,7 @@ def extract_receipt(file: UploadFile = File(...)):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Anda adalah agen OCR AGORA untuk struk Indonesia. Ekstrak data dari gambar struk/nota ini dan kembalikan JSON murni yang valid. Schema wajib: {\"merchant_name\": string, \"transaction_date\": string|null, \"items\": [{\"item\": string, \"quantity\": integer, \"price\": number}], \"total_amount\": number, \"payment_method\": string|null, \"currency\": \"IDR\"}. Aturan: 1) gunakan bahasa yang umum dipakai di struk Indonesia, 2) item harus masuk ke array items, 3) quantity harus integer, 4) price harus angka numerik tanpa simbol mata uang, 5) total_amount harus angka numerik, 6) kalau quantity tidak tersedia, gunakan 1, 7) jangan tambahkan teks penjelasan apa pun sebelum atau sesudah JSON."
+                            "text": "Anda adalah agen OCR AGORA untuk struk Indonesia. Ekstrak data dari gambar struk/nota ini dan kembalikan JSON murni yang valid. Schema wajib: {\"merchant_name\": string, \"category\": string, \"transaction_date\": string|null, \"items\": [{\"item\": string, \"quantity\": integer, \"price\": number}], \"total_amount\": number, \"payment_method\": string|null, \"currency\": \"IDR\"}. Aturan: 1) gunakan bahasa yang umum dipakai di struk Indonesia, 2) item harus masuk ke array items, 3) quantity harus integer, 4) price harus angka numerik tanpa simbol mata uang, 5) total_amount harus angka numerik, 6) kalau quantity tidak tersedia, gunakan 1, 7) category HARUS disimpulkan dari nama item atau toko (misal: 'Food', 'Supplies', 'Transport', 'Utilities', 'Other'), 8) jangan tambahkan teks penjelasan apa pun sebelum atau sesudah JSON."
                         },
                         {
                             "type": "image_url",
@@ -488,12 +494,21 @@ def extract_receipt(file: UploadFile = File(...)):
         
         # 4. Mengeksekusi request ke server NVIDIA
         print(f"Meneruskan task OCR ke NVIDIA untuk file: {file.filename}")
-        response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
+        try:
+            response = requests.post(NVIDIA_API_URL, headers=headers, json=payload, timeout=30)
+        except requests.exceptions.RequestException as req_err:
+            print(f"Error Koneksi ke NVIDIA: {str(req_err)}")
+            raise HTTPException(status_code=502, detail="Koneksi ke server OCR gagal atau timeout. Mohon coba lagi nanti.")
         
         # 5. Evaluasi dan Error Handling
         if response.status_code != 200:
             print(f"Error Response dari NVIDIA: {response.text}")
-            raise HTTPException(status_code=response.status_code, detail="Gagal mendapatkan respons valid dari NVIDIA NIM.")
+            if response.status_code in (401, 403):
+                raise HTTPException(status_code=500, detail="Konfigurasi API Key OCR tidak valid.")
+            elif response.status_code == 429:
+                raise HTTPException(status_code=503, detail="Server OCR sedang sibuk, mohon coba beberapa saat lagi.")
+            else:
+                raise HTTPException(status_code=502, detail=f"Server OCR sedang mengalami gangguan (Error {response.status_code}).")
             
         response_data = response.json()
         
@@ -514,4 +529,3 @@ def extract_receipt(file: UploadFile = File(...)):
     except Exception as e:
         print(f"Exception di AI Engine: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Terjadi kesalahan internal server: {str(e)}")
-
