@@ -24,3 +24,4 @@ storage/
 nemotron-ocr-v2/
 *.log
 .DS_Store
+build/

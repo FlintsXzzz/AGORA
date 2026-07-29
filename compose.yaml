@@ -1,42 +1,54 @@
-x-node-base: &node-base
-  build:
-    context: .
-    dockerfile: Dockerfile
-  working_dir: /app
-  volumes:
-    - .:/app
-  environment:
-    NODE_ENV: production
-
 services:
   agora:
-    <<: *node-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
     command: ["node", "index.js"]
+    environment:
+      NODE_ENV: production
+      AI_ENGINE_BASE_URL: http://ai-engine:8000
+      WWEBJS_SESSION_DIR: /app/.wwebjs_auth
     ports:
       - "3000:3000"
+    depends_on:
+      - ai-engine
     restart: unless-stopped
 
   ai-engine:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-engine
     working_dir: /app
-    volumes:
-      - .:/app
     env_file:
       - ./.env
-    command: >
-      sh -c "pip install --no-cache-dir -r agora_requirements.txt &&
-             uvicorn main:app --host 0.0.0.0 --port 8000"
+    environment:
+      AGORA_STORAGE_DIR: /app/storage
     ports:
       - "8000:8000"
+    volumes:
+      - agora-storage:/app/storage
     restart: unless-stopped
 
   agora-debug:
-    <<: *node-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
     environment:
       NODE_ENV: development
       DEBUG: "true"
+      AI_ENGINE_BASE_URL: http://ai-engine:8000
+      WWEBJS_SESSION_DIR: /app/.wwebjs_auth
     command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
     ports:
       - "3000:3000"
       - "9229:9229"
+    depends_on:
+      - ai-engine
     restart: unless-stopped
+    profiles:
+      - debug
+
+volumes:
+  agora-storage:

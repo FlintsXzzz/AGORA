@@ -24,18 +24,14 @@
   },
   "postCreateCommand": "pip install -r agora_requirements.txt",
   "remoteUser": "codespace",
-  "forwardPorts": [3000, 5000, 8000],
+  "forwardPorts": [3000, 8000],
   "portsAttributes": {
     "3000": {
       "label": "Application",
       "onAutoForward": "notify"
     },
-    "5000": {
-      "label": "API",
-      "onAutoForward": "notify"
-    },
     "8000": {
-      "label": "Dev Server",
+      "label": "AI Engine",
       "onAutoForward": "notify"
     }
   }

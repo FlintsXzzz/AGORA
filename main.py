@@ -8,6 +8,7 @@ import uuid
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+import threading
 from dotenv import load_dotenv
 
 # Memuat variabel environment
@@ -16,16 +17,23 @@ load_dotenv()
 app = FastAPI(title="AGORA AI Engine")
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not NVIDIA_API_KEY:
+    raise RuntimeError("NVIDIA_API_KEY belum dikonfigurasi di environment atau .env")
+
+
 # Endpoint standar NVIDIA NIM untuk model vision/multimodal
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 STORAGE_DIR = Path(os.getenv("AGORA_STORAGE_DIR", Path.cwd()))
 TRANSACTIONS_FILE = STORAGE_DIR / "transactions.json"
 
+# Lock untuk sinkronisasi operasi baca-tulis file JSON agar tidak race condition
+transaction_lock = threading.Lock()
+
 
 def normalize_ocr_payload(extracted_text: str) -> dict:
+    cleaned_text = re.sub(r'```(?:json)?\n?|```', '', extracted_text).strip()
     try:
-        parsed = json.loads(extracted_text)
+        parsed = json.loads(cleaned_text)
         if isinstance(parsed, dict):
             return parsed
     except Exception:
@@ -85,7 +93,7 @@ def normalize_integer_token(token: str) -> int | None:
     if value is None:
         return None
 
-    if not float(value).is_integer():
+    if not value.is_integer():
         return None
 
     return int(value)
@@ -423,9 +431,10 @@ def save_transaction(payload: SaveTransactionRequest):
             saved_at=saved_at,
         )
 
-        transactions = load_transactions()
-        transactions.append(transaction.model_dump())
-        save_transactions(transactions)
+        with transaction_lock:
+            transactions = load_transactions()
+            transactions.append(transaction.model_dump())
+            save_transactions(transactions)
 
         return {
             "status": "success",
@@ -439,14 +448,10 @@ def save_transaction(payload: SaveTransactionRequest):
 
 
 @app.post("/extract-receipt")
-async def extract_receipt(file: UploadFile = File(...)):
-    # Lapisan keamanan dasar: pastikan API key tersedia
-    if not NVIDIA_API_KEY:
-        raise HTTPException(status_code=500, detail="NVIDIA_API_KEY belum dikonfigurasi di .env")
-
+def extract_receipt(file: UploadFile = File(...)):
     try:
         # 1. Membaca file gambar ke dalam buffer memori
-        file_bytes = await file.read()
+        file_bytes = file.file.read()
         
         # 2. Mengubah format biner gambar menjadi string Base64 
         # (Wajib untuk transmisi payload JSON ke endpoint NVIDIA)
@@ -504,6 +509,8 @@ async def extract_receipt(file: UploadFile = File(...)):
             "data": validated_ocr
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Exception di AI Engine: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Terjadi kesalahan internal server: {str(e)}")

@@ -11,7 +11,6 @@ AGORA adalah sistem manajemen operasional cerdas yang menggabungkan WhatsApp, OC
 
 ## 🏗️ Arsitektur Sistem
 
-<<<<<<< HEAD
 AGORA terdiri dari dua komponen utama:
 
 1. **WhatsApp Gateway (Node.js)**
@@ -103,7 +102,7 @@ docker compose up --build
 - `index.js` — gateway WhatsApp
 - `main.py` — API AI Engine
 - `Dockerfile` — image container untuk aplikasi Node.js
-- `docker-compose.yml` — konfigurasi layanan Docker
+- `compose.yaml` — konfigurasi layanan Docker
 - `agora_requirements.txt` — dependency Python
 - `package.json` — dependency Node.js
 
@@ -116,13 +115,3 @@ docker compose up --build
 ## 🤝 Kontribusi
 
 Kontribusi sangat terbuka. Silakan buat branch baru, lakukan perubahan, lalu ajukan pull request.
-
-   git clone https://github.com/FlintsXzzz/AGORA
-   cd agora
-
-   # Create a local .env file with the NVIDIA API key
-   # NVIDIA_API_KEY=your_nvidia_api_key_here
-
-   # Start with Docker Compose (recommended):
-   docker compose up --build
->>>>>>> 67180610ab9e9a951cc5deb39a1d475c8faa15be

@@ -47,7 +47,7 @@ function parseReceiptPayload(rawPayload) {
 
             return {
                 items,
-                total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0), 0)
+                total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0)
             };
         } catch (error) {
             return { items: [], total_amount: 0 };
@@ -60,7 +60,7 @@ function parseReceiptPayload(rawPayload) {
 
         return {
             items,
-            total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0), 0)
+            total_amount: totalAmount || items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0)
         };
     }
 
@@ -140,11 +140,16 @@ client.on('ready', () => {
     console.log('Menunggu pesan masuk...');
 });
 
-client.on('disconnected', (reason) => {
+client.on('disconnected', async (reason) => {
     console.warn('⚠️ Bot terputus dari WhatsApp. Alasan:', reason);
 
     if (reason && !String(reason).toLowerCase().includes('auth')) {
-        console.log('🔄 Mencoba menghubungkan ulang bot dalam 5 detik...');
+        console.log('🔄 Menutup client dan menghubungkan ulang dalam 5 detik...');
+        try {
+            await client.destroy();
+        } catch (err) {
+            console.error('Gagal menutup sesi:', err);
+        }
         setTimeout(() => client.initialize(), 5000);
     }
 });
@@ -217,12 +222,18 @@ client.on('message', async msg => {
         } catch (error) {
             console.error('❌ Error saat memproses media:', error && error.stack ? error.stack : error);
 
+            // Relay FastAPI error messages back to the user
+            if (error.response && error.response.data && error.response.data.detail) {
+                msg.reply(`⚠️ Gagal memproses struk: ${error.response.data.detail}`);
+                return;
+            }
+
             // Jika error berkaitan dengan autentikasi wwebjs, coba inisialisasi ulang sekali
             const errMsg = (error && error.message) ? error.message.toLowerCase() : '';
             if (errMsg.includes('auth') || errMsg.includes('session')) {
                 msg.reply('⚠️ Terjadi masalah autentikasi sesi. Mencoba memulai ulang sesi...');
                 try {
-                    client.destroy();
+                    await client.destroy();
                 } catch (e) {
                     // ignore
                 }
