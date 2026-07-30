@@ -1,11 +1,23 @@
 {
-    "configurations": [
-        {
-            "name": "Containers: Node.js Launch",
-            "type": "docker",
-            "request": "launch",
-            "preLaunchTask": "docker-run: debug",
-            "platform": "node"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Containers: Node.js Launch",
+      "type": "docker",
+      "request": "launch",
+      "preLaunchTask": "docker-run: debug",
+      "platform": "node"
+    },
+    {
+      "name": "Foundry: Attach to AgentDev",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5679
+      },
+      "preLaunchTask": "foundry:agentdev-debugpy",
+      "justMyCode": true
+    }
+  ]
 }

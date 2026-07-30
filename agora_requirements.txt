@@ -9,3 +9,5 @@ psycopg2-binary>=2.9,<3.0
 pytest
 pytest-mock
 httpx
+debugpy
+agent-dev-cli

@@ -82,6 +82,22 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 Setelah gateway berjalan, scan QR code yang muncul di terminal untuk menghubungkan akun WhatsApp Anda.
 
+### 6. Debug AI Engine dengan Foundry Toolkit Agent Inspector (opsional)
+
+Install dependency Python yang diperlukan:
+
+```bash
+pip install -r agora_requirements.txt
+```
+
+Jalankan server agent kompatibel Inspector:
+
+```bash
+agentdev run .\agent_server.py --port 8087
+```
+
+Di VS Code, gunakan task `foundry:agentdev-run` untuk menjalankan server, atau launch config `Foundry: Attach to AgentDev` untuk debugging.
+
 ## 🐳 Menjalankan dengan Docker
 
 Jika Anda ingin menjalankan aplikasi melalui Docker, gunakan:

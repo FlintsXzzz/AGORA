@@ -1,39 +1,65 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"type": "docker-build",
-			"label": "docker-build",
-			"platform": "node",
-			"dockerBuild": {
-				"dockerfile": "${workspaceFolder}/Dockerfile",
-				"context": "${workspaceFolder}",
-				"pull": true
-			}
-		},
-		{
-			"type": "docker-run",
-			"label": "docker-run: release",
-			"dependsOn": [
-				"docker-build"
-			],
-			"platform": "node"
-		},
-		{
-			"type": "docker-run",
-			"label": "docker-run: debug",
-			"dependsOn": [
-				"docker-build"
-			],
-			"dockerRun": {
-				"env": {
-					"DEBUG": "*",
-					"NODE_ENV": "development"
-				}
-			},
-			"node": {
-				"enableDebugging": true
-			}
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "docker-build",
+      "label": "docker-build",
+      "platform": "node",
+      "dockerBuild": {
+        "dockerfile": "${workspaceFolder}\\Dockerfile",
+        "context": "${workspaceFolder}",
+        "pull": true
+      }
+    },
+    {
+      "type": "docker-run",
+      "label": "docker-run: release",
+      "dependsOn": [
+        "docker-build"
+      ],
+      "platform": "node"
+    },
+    {
+      "type": "docker-run",
+      "label": "docker-run: debug",
+      "dependsOn": [
+        "docker-build"
+      ],
+      "dockerRun": {
+        "env": {
+          "DEBUG": "*",
+          "NODE_ENV": "development"
+        }
+      },
+      "node": {
+        "enableDebugging": true
+      }
+    },
+    {
+      "label": "foundry:agentdev-run",
+      "type": "shell",
+      "command": "$env:NVIDIA_API_KEY='local-debug'; $env:DATABASE_URL='sqlite:///./agora_agentdev.db'; agentdev run .\\agent_server.py --port 8087",
+      "problemMatcher": []
+    },
+    {
+      "label": "foundry:agentdev-debugpy",
+      "type": "shell",
+      "command": "$env:NVIDIA_API_KEY='local-debug'; $env:DATABASE_URL='sqlite:///./agora_agentdev.db'; \"${command:python.interpreterPath}\" -m debugpy --listen 127.0.0.1:5679 -m agentdev run .\\agent_server.py --port 8087",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": [
+          {
+            "regexp": "^(.*)$",
+            "message": 1
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Uvicorn running on"
+        }
+      }
+    }
+  ]
 }
