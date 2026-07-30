@@ -20,7 +20,6 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    models.Base.metadata.create_all(bind=engine)
     yield
 
 app = FastAPI(title="AGORA AI Engine", lifespan=lifespan)
@@ -396,11 +395,17 @@ def get_user_by_whatsapp(number: str, db: Session = Depends(get_db)):
 @app.post("/transactions")
 def save_transaction(payload: SaveTransactionRequest, db: Session = Depends(get_db)):
     try:
-        tenant = db.query(models.Tenant).filter(models.Tenant.id == payload.tenant_id).first()
+        try:
+            tenant_id = uuid.UUID(payload.tenant_id)
+            user_id = uuid.UUID(payload.user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="tenant_id atau user_id tidak valid.")
+
+        tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
         
-        user = db.query(models.User).filter(models.User.id == payload.user_id).first()
+        user = db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User tidak ditemukan.")
 
@@ -443,7 +448,7 @@ def save_transaction(payload: SaveTransactionRequest, db: Session = Depends(get_
                 "transaction_id": str(new_transaction.id),
                 "tenant_id": str(new_transaction.tenant_id),
                 "recorded_by": str(new_transaction.recorded_by),
-                "amount": float(new_transaction),
+                "amount": float(new_transaction.amount),
                 "created_at": new_transaction.created_at.isoformat()
             }
         }

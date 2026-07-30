@@ -88,7 +88,7 @@ def test_create_transaction_success(setup_test_data, db_session):
     assert data["status"] == "success"
     
     # Verify in DB
-    tx = db_session.query(Transaction).filter_by(tenant_id=setup_test_data["tenant_id"]).first()
+    tx = db_session.query(Transaction).filter_by(tenant_id=uuid.UUID(setup_test_data["tenant_id"])).first()
     assert tx is not None
     assert tx.amount == 30000
     assert tx.category == "Food"

@@ -60,11 +60,18 @@ Buat file `.env` pada direktori proyek atau sesuaikan environment Anda dengan va
 ```env
 NVIDIA_API_KEY=your_api_key_here
 AGORA_STORAGE_DIR=./storage
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agora
 ```
 
 > Jangan commit file `.env` ke repositori. File ini harus tetap lokal karena berisi kredensial sensitif.
 
-### 5. Jalankan layanan
+### 5. Jalankan migrasi database (Alembic)
+
+```bash
+alembic upgrade head
+```
+
+### 6. Jalankan layanan
 
 Buka dua terminal terpisah.
 

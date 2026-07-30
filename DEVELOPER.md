@@ -20,10 +20,12 @@
 ### Python AI Engine
 
 ```bash
+python -m pip install -r agora_requirements.txt
+alembic upgrade head
 python -m uvicorn main:app --reload --port 8000
 ```
 
-Required env: `NVIDIA_API_KEY`, `AGORA_STORAGE_DIR` (optional)
+Required env: `NVIDIA_API_KEY`, `DATABASE_URL`, `AGORA_STORAGE_DIR` (optional)
 
 ### Node WhatsApp Gateway
 
@@ -50,6 +52,7 @@ Env: `AI_ENGINE_BASE_URL` (default `http://ai-engine:8000`), `WWEBJS_SESSION_DIR
 
 ## Notes
 
-- **Storage**: by default transactions are written to `AGORA_STORAGE_DIR` or the current working directory. The JSON file storage is single-process only — do not use `uvicorn --workers > 1` in production without switching to a database.
+- **Storage**: `AGORA_STORAGE_DIR` dapat dipakai untuk artefak file lokal (opsional), sementara data transaksi disimpan di database melalui SQLAlchemy.
+- **Database migrations**: schema management is done with Alembic (`alembic upgrade head`) instead of `Base.metadata.create_all`.
 - **NVIDIA integration**: set `NVIDIA_API_KEY` in environment or `.env` before starting AI Engine.
 - This document is a minimal runbook; expand as needed (troubleshooting, test coverage, local mocking).
