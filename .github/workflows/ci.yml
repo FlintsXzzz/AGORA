@@ -20,7 +20,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f "agora_requirements.txt" ]; then pip install -r agora_requirements.txt; fi
       - name: Run Pytest
-        run: pytest -q
+        run: python -m pytest -q
 
   node-audit:
     runs-on: ubuntu-latest
